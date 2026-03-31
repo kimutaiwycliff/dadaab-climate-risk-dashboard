@@ -2,21 +2,34 @@ export interface Basemap {
 	id: string;
 	label: string;
 	style: string | object;
-	preview: string; // CSS color for preview swatch
+	preview: string;
 }
+
+const osmRasterStyle = () => ({
+	version: 8 as const,
+	sources: {
+		'osm-tiles': {
+			type: 'raster' as const,
+			tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'],
+			tileSize: 256,
+			attribution: '© OpenStreetMap contributors'
+		}
+	},
+	layers: [{ id: 'osm-tiles', type: 'raster' as const, source: 'osm-tiles' }]
+});
 
 export const BASEMAPS: Basemap[] = [
 	{
 		id: 'dark',
-		label: 'Dark Matter',
+		label: 'Dark',
 		style: 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json',
 		preview: '#1a1a2e'
 	},
 	{
-		id: 'light',
-		label: 'Positron',
-		style: 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json',
-		preview: '#f5f5f0'
+		id: 'osm',
+		label: 'OSM',
+		style: osmRasterStyle(),
+		preview: '#b5d0d0'
 	},
 	{
 		id: 'voyager',
@@ -46,3 +59,13 @@ export const BASEMAPS: Basemap[] = [
 ];
 
 export const basemapState = $state({ current: 'dark' });
+
+/** Called by themeStore when theme changes — only auto-switches if on the paired basemap */
+export function syncBasemapToTheme(isDark: boolean) {
+	const paired = isDark ? 'dark' : 'osm';
+	const opposite = isDark ? 'osm' : 'dark';
+	// Auto-switch only if currently on the opposite theme's default
+	if (basemapState.current === opposite) {
+		basemapState.current = paired;
+	}
+}

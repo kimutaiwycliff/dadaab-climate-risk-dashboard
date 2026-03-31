@@ -51,9 +51,10 @@ function parseCSV(csv: string): FIRMSHotspot[] {
 		.filter((h) => !isNaN(h.latitude) && !isNaN(h.longitude));
 }
 
+// VIIRS_SNPP_NRT accepts 1–5 days only; MODIS_NRT accepts up to 10
 export async function fetchFIRMSHotspots(
 	apiKey: string,
-	days = 7
+	days = 5
 ): Promise<{ hotspots: FIRMSHotspot[]; isDemo: boolean }> {
 	if (!apiKey || apiKey === 'demo' || apiKey === '') {
 		return { hotspots: FALLBACK_HOTSPOTS, isDemo: true };
@@ -64,10 +65,17 @@ export async function fetchFIRMSHotspots(
 	try {
 		const response = await fetch(url);
 		if (!response.ok) throw new Error(`FIRMS API error: ${response.status}`);
-		const csv = await response.text();
-		const hotspots = parseCSV(csv);
-		return { hotspots: hotspots.length > 0 ? hotspots : FALLBACK_HOTSPOTS, isDemo: hotspots.length === 0 };
-	} catch {
+		const text = await response.text();
+		// Detect API-level errors returned as plain text
+		if (!text.startsWith('latitude') && !text.startsWith('"latitude')) {
+			console.warn('FIRMS API returned unexpected response:', text.slice(0, 120));
+			return { hotspots: FALLBACK_HOTSPOTS, isDemo: true };
+		}
+		// Valid CSV — may have 0 data rows if no fires in period (not demo)
+		const hotspots = parseCSV(text);
+		return { hotspots, isDemo: false };
+	} catch (err) {
+		console.warn('FIRMS fetch failed:', err);
 		return { hotspots: FALLBACK_HOTSPOTS, isDemo: true };
 	}
 }

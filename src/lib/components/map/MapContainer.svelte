@@ -17,7 +17,8 @@
 	import { osmToGeoJSONPoints } from '$lib/api/overpass';
 
 	let mapContainer: HTMLDivElement;
-	let popup: Popup | null = null;
+	let popup: Popup | null = null;      // click popup — stays until dismissed
+	let hoverPopup: Popup | null = null; // hover tooltip — follows cursor, auto-dismisses
 	// $state so that $effect calls at top-level can track these
 	let layersAdded = $state(false);
 
@@ -267,22 +268,45 @@
 			});
 		}
 
-		// Popups
+		// ── Helper: show hover tooltip ──────────────────────────────────────────
+		function showHover(lngLat: [number, number], html: string) {
+			hoverPopup?.remove();
+			hoverPopup = new MapLibre.Popup({
+				closeButton: false,
+				closeOnClick: false,
+				maxWidth: '220px',
+				className: 'hover-popup'
+			})
+				.setLngLat(lngLat)
+				.setHTML(html)
+				.addTo(m);
+		}
+		function hideHover() {
+			hoverPopup?.remove();
+			hoverPopup = null;
+		}
+		function setCursor(c: string) { m.getCanvas().style.cursor = c; }
+
+		// ── Click popups (persistent, dismissible) ───────────────────────────
 		m.on('click', 'fire-hotspots', (e) => {
 			if (!e.features?.[0]) return;
+			hideHover();
 			const props = e.features[0].properties as Record<string, string | number>;
 			const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
 			popup?.remove();
-			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '260px' })
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '270px' })
 				.setLngLat(coords)
 				.setHTML(`
-					<div style="line-height:1.5">
-						<div style="font-weight:600;color:#f97316;margin-bottom:4px">🔥 Fire Hotspot</div>
-						<div>Brightness: <code>${props.brightness}K</code></div>
-						<div>FRP: <code>${props.frp} MW</code></div>
-						<div>Confidence: <code>${props.confidence}</code></div>
-						<div>Detected: <code>${props.acq_date} ${props.acq_time}</code></div>
-						<div>Satellite: <code>${props.satellite}</code></div>
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#f97316;margin-bottom:6px">🔥 Fire Hotspot</div>
+						<table style="width:100%;font-size:11px;border-collapse:collapse">
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Brightness</td><td><code>${props.brightness}K</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">FRP</td><td><code>${props.frp} MW</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Confidence</td><td><code>${props.confidence}</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Detected</td><td><code>${props.acq_date} ${props.acq_time}</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Satellite</td><td><code>${props.satellite}</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Day/Night</td><td><code>${props.daynight === 'D' ? '☀️ Day' : '🌙 Night'}</code></td></tr>
+						</table>
 					</div>
 				`)
 				.addTo(m);
@@ -290,26 +314,136 @@
 
 		m.on('click', 'camps', (e) => {
 			if (!e.features?.[0]) return;
+			hideHover();
 			const props = e.features[0].properties as Record<string, string | number>;
 			const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
 			popup?.remove();
-			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '280px' })
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '290px' })
 				.setLngLat(coords)
 				.setHTML(`
-					<div style="line-height:1.5">
-						<div style="font-weight:600;color:#22c55e;margin-bottom:4px">🏕️ ${props.name}</div>
-						<div>Established: <code>${props.established}</code></div>
-						<div>Area: <code>${props.area_km2} km²</code></div>
-						<div style="font-size:11px;color:#9ca3af;margin-top:4px">${props.description}</div>
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#22c55e;margin-bottom:6px">🏕️ ${props.name}</div>
+						<table style="width:100%;font-size:11px;border-collapse:collapse">
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Established</td><td><code>${props.established}</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Area</td><td><code>${props.area_km2} km²</code></td></tr>
+						</table>
+						<div style="font-size:11px;color:#9ca3af;margin-top:6px;line-height:1.4">${props.description}</div>
 					</div>
 				`)
 				.addTo(m);
 		});
 
-		m.on('mouseenter', 'fire-hotspots', () => { m.getCanvas().style.cursor = 'pointer'; });
-		m.on('mouseleave', 'fire-hotspots', () => { m.getCanvas().style.cursor = ''; });
-		m.on('mouseenter', 'camps', () => { m.getCanvas().style.cursor = 'pointer'; });
-		m.on('mouseleave', 'camps', () => { m.getCanvas().style.cursor = ''; });
+		m.on('click', 'earthquakes-circles', (e) => {
+			if (!e.features?.[0]) return;
+			hideHover();
+			const props = e.features[0].properties as Record<string, string | number>;
+			const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+			popup?.remove();
+			const timeStr = props.time ? new Date(Number(props.time)).toUTCString() : '—';
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '280px' })
+				.setLngLat(coords)
+				.setHTML(`
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#ec4899;margin-bottom:6px">🌍 Earthquake M${Number(props.magnitude).toFixed(1)}</div>
+						<table style="width:100%;font-size:11px;border-collapse:collapse">
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Location</td><td style="font-size:10px">${props.place}</td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Depth</td><td><code>${Number(props.depth).toFixed(1)} km</code></td></tr>
+							<tr><td style="color:#9ca3af;padding:1px 6px 1px 0">Time</td><td style="font-size:10px">${timeStr}</td></tr>
+						</table>
+					</div>
+				`)
+				.addTo(m);
+		});
+
+		m.on('click', 'health-points', (e) => {
+			if (!e.features?.[0]) return;
+			hideHover();
+			const props = e.features[0].properties as Record<string, string>;
+			const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+			popup?.remove();
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '240px' })
+				.setLngLat(coords)
+				.setHTML(`
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#a855f7;margin-bottom:4px">🏥 ${props.name || props['name:en'] || 'Health Facility'}</div>
+						<div style="font-size:11px;color:#9ca3af">${props.amenity || 'Health centre'}</div>
+					</div>
+				`)
+				.addTo(m);
+		});
+
+		m.on('click', 'water-points', (e) => {
+			if (!e.features?.[0]) return;
+			hideHover();
+			const props = e.features[0].properties as Record<string, string>;
+			const coords = (e.features[0].geometry as GeoJSON.Point).coordinates as [number, number];
+			popup?.remove();
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '220px' })
+				.setLngLat(coords)
+				.setHTML(`
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#06b6d4;margin-bottom:4px">💧 ${props.name || 'Water Point'}</div>
+						<div style="font-size:11px;color:#9ca3af">${props.amenity || props['man_made'] || 'Water source'}</div>
+					</div>
+				`)
+				.addTo(m);
+		});
+
+		// ── Hover tooltips (quick info on mouseover) ─────────────────────────
+		m.on('mousemove', 'fire-hotspots', (e) => {
+			if (!e.features?.[0]) return;
+			setCursor('pointer');
+			const props = e.features[0].properties as Record<string, string | number>;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#f97316">🔥 Fire</strong> &nbsp; FRP: <code>${props.frp} MW</code> &nbsp; Confidence: <code>${props.confidence}</code></div>`
+			);
+		});
+		m.on('mouseleave', 'fire-hotspots', () => { setCursor(''); hideHover(); });
+
+		m.on('mousemove', 'camps', (e) => {
+			if (!e.features?.[0]) return;
+			setCursor('pointer');
+			const props = e.features[0].properties as Record<string, string | number>;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#22c55e">🏕️ ${props.name}</strong> &nbsp; Est. <code>${props.established}</code> &nbsp; ${props.area_km2} km²</div>`
+			);
+		});
+		m.on('mouseleave', 'camps', () => { setCursor(''); hideHover(); });
+
+		m.on('mousemove', 'earthquakes-circles', (e) => {
+			if (!e.features?.[0]) return;
+			setCursor('pointer');
+			const props = e.features[0].properties as Record<string, string | number>;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#ec4899">🌍 M${Number(props.magnitude).toFixed(1)}</strong> &nbsp; Depth: <code>${Number(props.depth).toFixed(0)} km</code></div>`
+			);
+		});
+		m.on('mouseleave', 'earthquakes-circles', () => { setCursor(''); hideHover(); });
+
+		m.on('mousemove', 'health-points', (e) => {
+			if (!e.features?.[0]) return;
+			setCursor('pointer');
+			const props = e.features[0].properties as Record<string, string>;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#a855f7">🏥</strong> ${props.name || props.amenity || 'Health facility'}</div>`
+			);
+		});
+		m.on('mouseleave', 'health-points', () => { setCursor(''); hideHover(); });
+
+		m.on('mousemove', 'water-points', (e) => {
+			if (!e.features?.[0]) return;
+			setCursor('pointer');
+			const props = e.features[0].properties as Record<string, string>;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#06b6d4">💧</strong> ${props.name || props.amenity || 'Water point'}</div>`
+			);
+		});
+		m.on('mouseleave', 'water-points', () => { setCursor(''); hideHover(); });
 
 		layersAdded = true;
 
@@ -342,6 +476,7 @@
 
 	onDestroy(() => {
 		popup?.remove();
+		hoverPopup?.remove();
 		mapState.instance?.remove();
 		mapState.instance = null;
 	});

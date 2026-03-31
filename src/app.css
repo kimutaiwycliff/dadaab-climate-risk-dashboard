@@ -111,6 +111,14 @@ body {
 	background: transparent;
 }
 
+/* ── Hover tooltip popup — compact, no close button ───────────────────────── */
+.hover-popup .maplibregl-popup-content {
+	padding: 6px 10px;
+	font-size: 11px;
+	pointer-events: none;
+	box-shadow: 0 2px 12px rgba(0, 0, 0, 0.4);
+}
+
 /* ── Scrollbar ─────────────────────────────────────────────────────────────── */
 ::-webkit-scrollbar { width: 4px; }
 ::-webkit-scrollbar-track { background: transparent; }

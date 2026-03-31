@@ -1,3 +1,5 @@
+import { syncBasemapToTheme } from './basemapStore.svelte';
+
 export const theme = $state({ isDark: true });
 
 export function toggleTheme() {
@@ -7,6 +9,7 @@ export function toggleTheme() {
 		document.documentElement.classList.toggle('light', !theme.isDark);
 		localStorage.setItem('theme', theme.isDark ? 'dark' : 'light');
 	}
+	syncBasemapToTheme(theme.isDark);
 }
 
 export function initTheme() {
