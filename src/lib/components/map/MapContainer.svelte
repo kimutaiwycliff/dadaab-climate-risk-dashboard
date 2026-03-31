@@ -3,8 +3,8 @@
 	import type { Map, Popup } from 'maplibre-gl';
 	import { data } from '$lib/stores/dataStore.svelte';
 	import { layers } from '$lib/stores/layerStore.svelte';
-	import { theme } from '$lib/stores/themeStore.svelte';
 	import { mapState } from '$lib/stores/mapStore.svelte';
+	import { basemapState, BASEMAPS } from '$lib/stores/basemapStore.svelte';
 	import { DADAAB_CAMPS, DROUGHT_ZONES, FLOOD_ZONES } from '$lib/data/camps';
 	import {
 		campsToGeoJSON,
@@ -17,24 +17,100 @@
 	import { osmToGeoJSONPoints } from '$lib/api/overpass';
 
 	let mapContainer: HTMLDivElement;
-	let map: Map | null = null;
 	let popup: Popup | null = null;
-	let layersAdded = false;
+	// $state so that $effect calls at top-level can track these
+	let layersAdded = $state(false);
 
-	const DARK_STYLE = 'https://basemaps.cartocdn.com/gl/dark-matter-gl-style/style.json';
-	const LIGHT_STYLE = 'https://basemaps.cartocdn.com/gl/positron-gl-style/style.json';
+	// ── Reactive: layer visibility ───────────────────────────────────────────
+	// This $effect is at top-level so it fires every time layers[*].visible changes
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded) return;
+		layers.forEach((l) => {
+			if (m.isStyleLoaded()) applyVisibility(m, l.id, l.visible);
+		});
+	});
 
-	function getStyle() {
-		return theme.isDark ? DARK_STYLE : LIGHT_STYLE;
+	// ── Reactive: basemap change ──────────────────────────────────────────────
+	$effect(() => {
+		const basemapId = basemapState.current;
+		const m = mapState.instance;
+		if (!m) return;
+		const bm = BASEMAPS.find((b) => b.id === basemapId);
+		if (!bm) return;
+		layersAdded = false;
+		// eslint-disable-next-line @typescript-eslint/no-explicit-any
+		m.setStyle(bm.style as any);
+		m.once('styledata', () => {
+			addAllLayers(m);
+		});
+	});
+
+	// ── Reactive: data source updates ────────────────────────────────────────
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded || !m.isStyleLoaded()) return;
+		void data.fires; // track
+		const src = m.getSource('fire-hotspots') as GeoSource | undefined;
+		src?.setData(firesToGeoJSON(data.fires));
+	});
+
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded || !m.isStyleLoaded()) return;
+		void data.earthquakes;
+		const src = m.getSource('earthquakes') as GeoSource | undefined;
+		src?.setData(earthquakesToGeoJSON(data.earthquakes));
+	});
+
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded || !m.isStyleLoaded()) return;
+		void data.healthFacilities;
+		const src = m.getSource('health') as GeoSource | undefined;
+		src?.setData(osmToGeoJSONPoints(data.healthFacilities));
+	});
+
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded || !m.isStyleLoaded()) return;
+		void data.waterPoints;
+		const src = m.getSource('water') as GeoSource | undefined;
+		src?.setData(osmToGeoJSONPoints(data.waterPoints));
+	});
+
+	$effect(() => {
+		const m = mapState.instance;
+		if (!m || !layersAdded || !m.isStyleLoaded()) return;
+		void data.drought; void data.fires;
+		const src = m.getSource('risk-grid') as GeoSource | undefined;
+		src?.setData(generateRiskGrid(data.fires.length, data.drought?.severity ?? 'severe'));
+	});
+
+	// ─────────────────────────────────────────────────────────────────────────
+
+	type GeoSource = { setData: (d: GeoJSON.FeatureCollection) => void };
+
+	function applyVisibility(m: Map, layerId: string, visible: boolean) {
+		const visibility = visible ? 'visible' : 'none';
+		const style = m.getStyle();
+		if (!style?.layers) return;
+		style.layers
+			.filter((l) => l.id === layerId || l.id.startsWith(`${layerId}-`))
+			.forEach((l) => {
+				try { m.setLayoutProperty(l.id, 'visibility', visibility); } catch { /* ignore */ }
+			});
 	}
 
 	async function addAllLayers(m: Map) {
 		const { default: MapLibre } = await import('maplibre-gl');
 
 		// 1. Risk grid
-		const riskData = generateRiskGrid(data.fires.length, data.drought?.severity ?? 'severe');
 		if (!m.getSource('risk-grid')) {
-			m.addSource('risk-grid', { type: 'geojson', data: riskData });
+			m.addSource('risk-grid', {
+				type: 'geojson',
+				data: generateRiskGrid(data.fires.length, data.drought?.severity ?? 'severe')
+			});
 		}
 		if (!m.getLayer('risk-grid-fill')) {
 			m.addLayer({
@@ -44,11 +120,7 @@
 				paint: {
 					'fill-color': [
 						'interpolate', ['linear'], ['get', 'score'],
-						0, '#22c55e',
-						30, '#eab308',
-						50, '#f97316',
-						70, '#ef4444',
-						90, '#8b0000'
+						0, '#22c55e', 30, '#eab308', 50, '#f97316', 70, '#ef4444', 90, '#8b0000'
 					],
 					'fill-opacity': 0.22
 				}
@@ -95,10 +167,7 @@
 
 		// 4. Health facilities
 		if (!m.getSource('health')) {
-			m.addSource('health', {
-				type: 'geojson',
-				data: osmToGeoJSONPoints(data.healthFacilities)
-			});
+			m.addSource('health', { type: 'geojson', data: osmToGeoJSONPoints(data.healthFacilities) });
 		}
 		if (!m.getLayer('health-points')) {
 			m.addLayer({
@@ -106,11 +175,8 @@
 				type: 'circle',
 				source: 'health',
 				paint: {
-					'circle-radius': 6,
-					'circle-color': '#a855f7',
-					'circle-stroke-color': '#fff',
-					'circle-stroke-width': 1.5,
-					'circle-opacity': 0.9
+					'circle-radius': 6, 'circle-color': '#a855f7',
+					'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5, 'circle-opacity': 0.9
 				},
 				layout: { visibility: 'none' }
 			});
@@ -118,10 +184,7 @@
 
 		// 5. Water points
 		if (!m.getSource('water')) {
-			m.addSource('water', {
-				type: 'geojson',
-				data: osmToGeoJSONPoints(data.waterPoints)
-			});
+			m.addSource('water', { type: 'geojson', data: osmToGeoJSONPoints(data.waterPoints) });
 		}
 		if (!m.getLayer('water-points')) {
 			m.addLayer({
@@ -129,11 +192,8 @@
 				type: 'circle',
 				source: 'water',
 				paint: {
-					'circle-radius': 5,
-					'circle-color': '#06b6d4',
-					'circle-stroke-color': '#fff',
-					'circle-stroke-width': 1.5,
-					'circle-opacity': 0.9
+					'circle-radius': 5, 'circle-color': '#06b6d4',
+					'circle-stroke-color': '#fff', 'circle-stroke-width': 1.5, 'circle-opacity': 0.9
 				},
 				layout: { visibility: 'none' }
 			});
@@ -149,19 +209,9 @@
 				type: 'circle',
 				source: 'fire-hotspots',
 				paint: {
-					'circle-radius': [
-						'interpolate', ['linear'], ['get', 'frp'],
-						0, 5, 10, 7, 50, 12
-					],
-					'circle-color': [
-						'match', ['get', 'confidence'],
-						'high', '#ef4444',
-						'nominal', '#f97316',
-						'#fbbf24'
-					],
-					'circle-stroke-color': '#fff',
-					'circle-stroke-width': 1,
-					'circle-opacity': 0.85
+					'circle-radius': ['interpolate', ['linear'], ['get', 'frp'], 0, 5, 10, 7, 50, 12],
+					'circle-color': ['match', ['get', 'confidence'], 'high', '#ef4444', 'nominal', '#f97316', '#fbbf24'],
+					'circle-stroke-color': '#fff', 'circle-stroke-width': 1, 'circle-opacity': 0.85
 				}
 			});
 		}
@@ -177,10 +227,8 @@
 				source: 'earthquakes',
 				paint: {
 					'circle-radius': ['interpolate', ['linear'], ['get', 'magnitude'], 2, 4, 5, 10, 8, 18],
-					'circle-color': '#ec4899',
-					'circle-stroke-color': '#fff',
-					'circle-stroke-width': 1,
-					'circle-opacity': 0.7
+					'circle-color': '#ec4899', 'circle-stroke-color': '#fff',
+					'circle-stroke-width': 1, 'circle-opacity': 0.7
 				},
 				layout: { visibility: 'none' }
 			});
@@ -196,11 +244,8 @@
 				type: 'circle',
 				source: 'camps',
 				paint: {
-					'circle-radius': 10,
-					'circle-color': '#22c55e',
-					'circle-stroke-color': '#fff',
-					'circle-stroke-width': 2,
-					'circle-opacity': 0.95
+					'circle-radius': 10, 'circle-color': '#22c55e',
+					'circle-stroke-color': '#fff', 'circle-stroke-width': 2, 'circle-opacity': 0.95
 				}
 			});
 			m.addLayer({
@@ -216,7 +261,7 @@
 				},
 				paint: {
 					'text-color': '#22c55e',
-					'text-halo-color': theme.isDark ? '#0d1117' : '#ffffff',
+					'text-halo-color': basemapState.current === 'dark' || basemapState.current === 'satellite' ? '#0d1117' : '#ffffff',
 					'text-halo-width': 2
 				}
 			});
@@ -231,13 +276,13 @@
 			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '260px' })
 				.setLngLat(coords)
 				.setHTML(`
-					<div class="space-y-1">
-						<div class="font-semibold text-orange-400">🔥 Fire Hotspot</div>
-						<div>Brightness: <span class="font-mono">${props.brightness}K</span></div>
-						<div>FRP: <span class="font-mono">${props.frp} MW</span></div>
-						<div>Confidence: <span class="font-mono">${props.confidence}</span></div>
-						<div>Detected: <span class="font-mono">${props.acq_date} ${props.acq_time}</span></div>
-						<div>Satellite: <span class="font-mono">${props.satellite}</span></div>
+					<div style="line-height:1.5">
+						<div style="font-weight:600;color:#f97316;margin-bottom:4px">🔥 Fire Hotspot</div>
+						<div>Brightness: <code>${props.brightness}K</code></div>
+						<div>FRP: <code>${props.frp} MW</code></div>
+						<div>Confidence: <code>${props.confidence}</code></div>
+						<div>Detected: <code>${props.acq_date} ${props.acq_time}</code></div>
+						<div>Satellite: <code>${props.satellite}</code></div>
 					</div>
 				`)
 				.addTo(m);
@@ -251,11 +296,11 @@
 			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '280px' })
 				.setLngLat(coords)
 				.setHTML(`
-					<div class="space-y-1">
-						<div class="font-semibold text-green-400">🏕️ ${props.name}</div>
-						<div>Established: <span class="font-mono">${props.established}</span></div>
-						<div>Area: <span class="font-mono">${props.area_km2} km²</span></div>
-						<div class="text-xs text-gray-400 mt-1">${props.description}</div>
+					<div style="line-height:1.5">
+						<div style="font-weight:600;color:#22c55e;margin-bottom:4px">🏕️ ${props.name}</div>
+						<div>Established: <code>${props.established}</code></div>
+						<div>Area: <code>${props.area_km2} km²</code></div>
+						<div style="font-size:11px;color:#9ca3af;margin-top:4px">${props.description}</div>
 					</div>
 				`)
 				.addTo(m);
@@ -268,56 +313,18 @@
 
 		layersAdded = true;
 
-		// Apply initial visibility from layer store
-		layers.forEach((l) => setLayerVisibility(m, l.id, l.visible));
-	}
-
-	function setLayerVisibility(m: Map, layerId: string, visible: boolean) {
-		if (!m.isStyleLoaded()) return;
-		const visibility = visible ? 'visible' : 'none';
-		const style = m.getStyle();
-		if (!style?.layers) return;
-
-		const subLayers = style.layers
-			.filter((l) => l.id === layerId || l.id.startsWith(`${layerId}-`))
-			.map((l) => l.id);
-
-		subLayers.forEach((id) => {
-			try { m.setLayoutProperty(id, 'visibility', visibility); } catch { /* ignore */ }
-		});
-	}
-
-	function updateFireSource(m: Map) {
-		const src = m.getSource('fire-hotspots') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
-		src?.setData?.(firesToGeoJSON(data.fires));
-	}
-
-	function updateEarthquakeSource(m: Map) {
-		const src = m.getSource('earthquakes') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
-		src?.setData?.(earthquakesToGeoJSON(data.earthquakes));
-	}
-
-	function updateHealthSource(m: Map) {
-		const src = m.getSource('health') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
-		src?.setData?.(osmToGeoJSONPoints(data.healthFacilities));
-	}
-
-	function updateWaterSource(m: Map) {
-		const src = m.getSource('water') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
-		src?.setData?.(osmToGeoJSONPoints(data.waterPoints));
-	}
-
-	function updateRiskGrid(m: Map) {
-		const src = m.getSource('risk-grid') as { setData?: (d: GeoJSON.FeatureCollection) => void } | undefined;
-		src?.setData?.(generateRiskGrid(data.fires.length, data.drought?.severity ?? 'severe'));
+		// Apply stored visibility state
+		layers.forEach((l) => applyVisibility(m, l.id, l.visible));
 	}
 
 	onMount(async () => {
 		const MapLibre = await import('maplibre-gl');
+		const initialBm = BASEMAPS.find((b) => b.id === basemapState.current) ?? BASEMAPS[0];
 
-		map = new MapLibre.Map({
+		const m = new MapLibre.Map({
 			container: mapContainer,
-			style: getStyle(),
+			// eslint-disable-next-line @typescript-eslint/no-explicit-any
+			style: initialBm.style as any,
 			center: [40.35, 1.68],
 			zoom: 9,
 			minZoom: 6,
@@ -325,62 +332,17 @@
 			attributionControl: false
 		});
 
-		mapState.instance = map;
+		// Setting mapState.instance triggers the top-level $effects
+		mapState.instance = m;
 
-		map.on('load', () => {
-			if (map) addAllLayers(map);
-		});
-
-		// React to layer visibility changes
-		$effect(() => {
-			if (!map || !layersAdded) return;
-			layers.forEach((l) => {
-				if (map && map.isStyleLoaded()) setLayerVisibility(map, l.id, l.visible);
-			});
-		});
-
-		// React to data changes
-		$effect(() => {
-			if (!map || !layersAdded || !map.isStyleLoaded()) return;
-			if (data.fires.length > 0) updateFireSource(map);
-		});
-
-		$effect(() => {
-			if (!map || !layersAdded || !map.isStyleLoaded()) return;
-			if (data.earthquakes.length > 0) updateEarthquakeSource(map);
-		});
-
-		$effect(() => {
-			if (!map || !layersAdded || !map.isStyleLoaded()) return;
-			if (data.healthFacilities.length > 0) updateHealthSource(map);
-		});
-
-		$effect(() => {
-			if (!map || !layersAdded || !map.isStyleLoaded()) return;
-			if (data.waterPoints.length > 0) updateWaterSource(map);
-		});
-
-		$effect(() => {
-			if (!map || !layersAdded || !map.isStyleLoaded()) return;
-			if (data.drought) updateRiskGrid(map);
-		});
-
-		// Theme switching
-		$effect(() => {
-			const isDark = theme.isDark;
-			if (!map) return;
-			const newStyle = isDark ? DARK_STYLE : LIGHT_STYLE;
-			map.setStyle(newStyle);
-			map.once('styledata', () => {
-				layersAdded = false;
-				if (map) addAllLayers(map);
-			});
+		m.on('load', () => {
+			addAllLayers(m);
 		});
 	});
 
 	onDestroy(() => {
 		popup?.remove();
-		map?.remove();
+		mapState.instance?.remove();
 		mapState.instance = null;
 	});
 </script>

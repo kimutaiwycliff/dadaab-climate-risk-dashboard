@@ -8,18 +8,18 @@
 	import DataSources from '$lib/components/panels/DataSources.svelte';
 </script>
 
-<div class="flex flex-col gap-3 p-4">
+<div class="flex flex-col gap-3 p-4 bg-background">
 	<StatsBar />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<LayerControls />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<WeatherPanel />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<DroughtIndex />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<HazardSummary />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<PopulationPanel />
-	<div class="border-t border-[hsl(222_35%_18%)]"></div>
+	<div class="border-t border-border"></div>
 	<DataSources />
 </div>

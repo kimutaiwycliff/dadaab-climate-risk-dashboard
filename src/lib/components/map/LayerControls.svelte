@@ -1,35 +1,94 @@
 <script lang="ts">
 	import { layers } from '$lib/stores/layerStore.svelte';
 	import { data } from '$lib/stores/dataStore.svelte';
+	import { mapState } from '$lib/stores/mapStore.svelte';
+	import { basemapState, BASEMAPS } from '$lib/stores/basemapStore.svelte';
+	import { Map as MapIcon, Layers } from 'lucide-svelte';
+
+	function applyVisibility(layerId: string, visible: boolean) {
+		const m = mapState.instance;
+		if (!m || !m.isStyleLoaded()) return;
+		const visibility = visible ? 'visible' : 'none';
+		const style = m.getStyle();
+		if (!style?.layers) return;
+		style.layers
+			.filter((l) => l.id === layerId || l.id.startsWith(`${layerId}-`))
+			.forEach((l) => {
+				try { m.setLayoutProperty(l.id, 'visibility', visibility); } catch { /* ignore */ }
+			});
+	}
 
 	function toggleLayer(id: string) {
 		const layer = layers.find((l) => l.id === id);
-		if (layer) layer.visible = !layer.visible;
+		if (!layer) return;
+		layer.visible = !layer.visible;
+		applyVisibility(id, layer.visible);
+	}
+
+	function switchBasemap(id: string) {
+		basemapState.current = id;
 	}
 
 	function getCount(id: string): number | undefined {
 		switch (id) {
 			case 'fire-hotspots': return data.fires.length;
 			case 'earthquakes': return data.earthquakes.length;
-			case 'health': return data.healthFacilities.filter(f => f.lat).length;
-			case 'water': return data.waterPoints.filter(f => f.lat).length;
+			case 'health': return data.healthFacilities.filter((f) => f.lat).length;
+			case 'water': return data.waterPoints.filter((f) => f.lat).length;
 			case 'camps': return 5;
 			default: return undefined;
 		}
 	}
 </script>
 
+<!-- Basemap switcher -->
+<div class="mb-3">
+	<div class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+		<MapIcon size={10} />
+		<span>Basemap</span>
+	</div>
+	<div class="grid grid-cols-4 gap-1">
+		{#each BASEMAPS as bm}
+			<button
+				onclick={() => switchBasemap(bm.id)}
+				class="flex flex-col items-center gap-1 rounded p-1 text-center transition-colors"
+				class:ring-1={basemapState.current === bm.id}
+				class:ring-primary={basemapState.current === bm.id}
+				class:bg-muted={basemapState.current === bm.id}
+				style="ring-color: currentColor"
+				aria-label="Switch to {bm.label} basemap"
+				aria-pressed={basemapState.current === bm.id}
+			>
+				<div
+					class="h-7 w-full rounded-sm border border-border"
+					style="background-color: {bm.preview}"
+				></div>
+				<span class="text-[9px] leading-tight text-muted-foreground">{bm.label}</span>
+			</button>
+		{/each}
+	</div>
+</div>
+
+<div class="border-t border-border mb-3"></div>
+
+<!-- Layer toggles -->
+<div class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+	<Layers size={10} />
+	<span>Map Layers</span>
+</div>
 <div class="space-y-1">
-	<div class="mb-2 text-xs font-semibold uppercase tracking-widest text-[hsl(215_20%_55%)]">Map Layers</div>
 	{#each layers as layer (layer.id)}
 		<button
-			class="flex w-full items-start gap-2.5 rounded p-1.5 text-left transition-colors hover:bg-[hsl(222_35%_18%)]"
+			class="flex w-full items-start gap-2.5 rounded p-1.5 text-left transition-colors hover:bg-muted"
 			onclick={() => toggleLayer(layer.id)}
 			aria-label="Toggle {layer.label} layer"
+			aria-pressed={layer.visible}
 		>
-			<!-- Color dot + toggle indicator -->
-			<div class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors"
-				style="border-color: {layer.color}; background-color: {layer.visible ? layer.color : 'transparent'}">
+			<!-- Checkbox indicator -->
+			<div
+				class="mt-0.5 flex h-4 w-4 shrink-0 items-center justify-center rounded-sm border transition-colors"
+				style="border-color: {layer.color}; background-color: {layer.visible ? layer.color : 'transparent'}"
+			>
 				{#if layer.visible}
 					<svg width="10" height="8" viewBox="0 0 10 8" fill="none">
 						<path d="M1 4L3.5 6.5L9 1" stroke="white" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"/>
@@ -38,16 +97,23 @@
 			</div>
 			<div class="min-w-0 flex-1">
 				<div class="flex items-center gap-1.5">
-					<span class="text-xs font-medium leading-tight" class:text-[hsl(210_40%_98%)]={layer.visible} class:text-[hsl(215_20%_55%)]={!layer.visible}>
+					<span
+						class="text-xs font-medium leading-tight transition-colors"
+						class:text-foreground={layer.visible}
+						class:text-muted-foreground={!layer.visible}
+					>
 						{layer.label}
 					</span>
 					{#if getCount(layer.id) !== undefined}
-						<span class="shrink-0 rounded-full px-1.5 py-0 text-[10px] font-mono" style="background-color: {layer.color}22; color: {layer.color}">
+						<span
+							class="shrink-0 rounded-full px-1.5 py-0 font-mono text-[10px]"
+							style="background-color: {layer.color}22; color: {layer.color}"
+						>
 							{getCount(layer.id)}
 						</span>
 					{/if}
 				</div>
-				<div class="mt-0.5 text-[10px] leading-tight text-[hsl(215_20%_45%)]">{layer.description}</div>
+				<div class="mt-0.5 text-[10px] leading-tight text-muted-foreground/60">{layer.description}</div>
 			</div>
 		</button>
 	{/each}

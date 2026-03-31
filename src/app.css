@@ -1,63 +1,12 @@
 @import 'tailwindcss';
 @import 'maplibre-gl/dist/maplibre-gl.css';
 
+/* ── Design tokens ─────────────────────────────────────────────────────────── */
 @theme {
 	--font-sans: 'IBM Plex Sans', sans-serif;
 	--font-mono: 'IBM Plex Mono', monospace;
 
-	--color-background: hsl(222 47% 7%);
-	--color-foreground: hsl(210 40% 98%);
-	--color-card: hsl(222 40% 11%);
-	--color-card-foreground: hsl(210 40% 98%);
-	--color-popover: hsl(222 40% 11%);
-	--color-popover-foreground: hsl(210 40% 98%);
-	--color-primary: hsl(210 40% 98%);
-	--color-primary-foreground: hsl(222 47% 7%);
-	--color-secondary: hsl(222 35% 18%);
-	--color-secondary-foreground: hsl(210 40% 98%);
-	--color-muted: hsl(222 35% 18%);
-	--color-muted-foreground: hsl(215 20% 55%);
-	--color-accent: hsl(222 35% 18%);
-	--color-accent-foreground: hsl(210 40% 98%);
-	--color-destructive: hsl(0 62.8% 30.6%);
-	--color-destructive-foreground: hsl(210 40% 98%);
-	--color-border: hsl(222 35% 18%);
-	--color-input: hsl(222 35% 18%);
-	--color-ring: hsl(212.7 26.8% 83.9%);
-
-	--color-risk-critical: hsl(5 5% 35%);
-	--color-risk-high: hsl(0 79% 58%);
-	--color-risk-medium: hsl(25 95% 53%);
-	--color-risk-low-medium: hsl(48 96% 53%);
-	--color-risk-low: hsl(142 71% 45%);
-	--color-fire: hsl(14 100% 57%);
-	--color-flood: hsl(217 91% 60%);
-	--color-drought: hsl(38 92% 50%);
-	--color-camp: hsl(142 71% 45%);
-	--color-seismic: hsl(336 80% 58%);
-
-	--radius: 0.375rem;
-}
-
-:root {
-	color-scheme: dark;
-}
-
-* {
-	border-color: hsl(222 35% 18%);
-}
-
-body {
-	background-color: hsl(222 47% 7%);
-	color: hsl(210 40% 98%);
-	font-family: var(--font-sans);
-	-webkit-font-smoothing: antialiased;
-	-moz-osx-font-smoothing: grayscale;
-}
-
-/* Light mode overrides */
-.light {
-	color-scheme: light;
+	/* Semantic surface colors — light defaults, dark overrides below */
 	--color-background: hsl(0 0% 98%);
 	--color-foreground: hsl(222 47% 11%);
 	--color-card: hsl(0 0% 100%);
@@ -72,66 +21,98 @@ body {
 	--color-muted-foreground: hsl(215 16% 47%);
 	--color-accent: hsl(210 40% 94%);
 	--color-accent-foreground: hsl(222 47% 11%);
+	--color-destructive: hsl(0 72% 51%);
+	--color-destructive-foreground: hsl(210 40% 98%);
 	--color-border: hsl(214 32% 88%);
 	--color-input: hsl(214 32% 88%);
 	--color-ring: hsl(222 47% 11%);
+
+	/* Hazard palette (theme-independent) */
+	--color-risk-critical: hsl(5 5% 35%);
+	--color-risk-high: hsl(0 79% 58%);
+	--color-risk-medium: hsl(25 95% 53%);
+	--color-risk-low-medium: hsl(48 96% 53%);
+	--color-risk-low: hsl(142 71% 45%);
+	--color-fire: hsl(14 100% 57%);
+	--color-flood: hsl(217 91% 60%);
+	--color-drought: hsl(38 92% 50%);
+	--color-camp: hsl(142 71% 45%);
+	--color-seismic: hsl(336 80% 58%);
+
+	--radius: 0.375rem;
 }
 
-.light body {
-	background-color: hsl(0 0% 98%);
-	color: hsl(222 47% 11%);
+/* ── Dark mode overrides ────────────────────────────────────────────────────── */
+.dark {
+	color-scheme: dark;
+	--color-background: hsl(222 47% 7%);
+	--color-foreground: hsl(210 40% 98%);
+	--color-card: hsl(222 40% 11%);
+	--color-card-foreground: hsl(210 40% 98%);
+	--color-popover: hsl(222 40% 11%);
+	--color-popover-foreground: hsl(210 40% 98%);
+	--color-primary: hsl(210 40% 98%);
+	--color-primary-foreground: hsl(222 47% 7%);
+	--color-secondary: hsl(222 35% 18%);
+	--color-secondary-foreground: hsl(210 40% 98%);
+	--color-muted: hsl(222 35% 18%);
+	--color-muted-foreground: hsl(215 20% 55%);
+	--color-accent: hsl(222 35% 18%);
+	--color-accent-foreground: hsl(210 40% 98%);
+	--color-border: hsl(222 35% 18%);
+	--color-input: hsl(222 35% 18%);
+	--color-ring: hsl(212.7 26.8% 83.9%);
 }
 
-/* Mono for data values */
-.font-mono {
-	font-family: var(--font-mono);
+/* ── Base styles ───────────────────────────────────────────────────────────── */
+*,
+::before,
+::after {
+	border-color: var(--color-border);
 }
 
-/* MapLibre canvas fills container */
+body {
+	background-color: var(--color-background);
+	color: var(--color-foreground);
+	font-family: var(--font-sans);
+	-webkit-font-smoothing: antialiased;
+	-moz-osx-font-smoothing: grayscale;
+}
+
+/* ── MapLibre overrides ────────────────────────────────────────────────────── */
 .maplibregl-map {
 	width: 100%;
 	height: 100%;
 }
 
-/* Popup styling */
 .maplibregl-popup-content {
-	background: hsl(222 40% 11%);
-	color: hsl(210 40% 98%);
-	border: 1px solid hsl(222 35% 18%);
-	border-radius: 0.375rem;
+	background: var(--color-card);
+	color: var(--color-foreground);
+	border: 1px solid var(--color-border);
+	border-radius: var(--radius);
 	padding: 0.75rem;
 	font-family: var(--font-sans);
 	font-size: 0.8125rem;
-	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.5);
+	box-shadow: 0 4px 24px rgba(0, 0, 0, 0.35);
 }
 
 .maplibregl-popup-tip {
-	border-top-color: hsl(222 35% 18%) !important;
-	border-bottom-color: hsl(222 35% 18%) !important;
+	border-top-color: var(--color-border) !important;
+	border-bottom-color: var(--color-border) !important;
 }
 
 .maplibregl-popup-close-button {
-	color: hsl(215 20% 55%);
+	color: var(--color-muted-foreground);
 	font-size: 1.1rem;
 	padding: 0.25rem 0.5rem;
 }
-
 .maplibregl-popup-close-button:hover {
-	color: hsl(210 40% 98%);
+	color: var(--color-foreground);
 	background: transparent;
 }
 
-/* Custom scrollbar */
-::-webkit-scrollbar {
-	width: 4px;
-}
-::-webkit-scrollbar-track {
-	background: transparent;
-}
-::-webkit-scrollbar-thumb {
-	background: hsl(222 35% 28%);
-	border-radius: 2px;
-}
-::-webkit-scrollbar-thumb:hover {
-	background: hsl(215 20% 45%);
-}
+/* ── Scrollbar ─────────────────────────────────────────────────────────────── */
+::-webkit-scrollbar { width: 4px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: var(--color-muted); border-radius: 2px; }
+::-webkit-scrollbar-thumb:hover { background: var(--color-muted-foreground); }
