@@ -62,18 +62,14 @@ export async function loadAllData(firmsApiKey: string) {
 		population: 'loading'
 	};
 
-	const results = await Promise.allSettled([
+	// Run non-Overpass queries in parallel
+	const [firmsResult, weatherResult, droughtResult, earthquakesResult, populationResult] = await Promise.allSettled([
 		fetchFIRMSHotspots(firmsApiKey),
 		fetchWeather(),
 		fetchDroughtData(),
-		fetchHealthFacilities(),
-		fetchWaterPoints(),
-		fetchRoads(),
 		fetchEarthquakes(),
 		fetchUNHCRData()
 	]);
-
-	const [firmsResult, weatherResult, droughtResult, healthResult, waterResult, roadsResult, earthquakesResult, populationResult] = results;
 
 	if (firmsResult.status === 'fulfilled') {
 		data.fires = firmsResult.value.hotspots;
@@ -100,20 +96,6 @@ export async function loadAllData(firmsApiKey: string) {
 		data.errors.drought = String(droughtResult.reason);
 	}
 
-	if (healthResult.status === 'fulfilled') {
-		data.healthFacilities = healthResult.value;
-	}
-	if (waterResult.status === 'fulfilled') {
-		data.waterPoints = waterResult.value;
-	}
-	if (roadsResult.status === 'fulfilled') {
-		data.roads = roadsResult.value;
-	}
-	data.loading.overpass =
-		healthResult.status === 'fulfilled' || waterResult.status === 'fulfilled' || roadsResult.status === 'fulfilled'
-			? 'success'
-			: 'error';
-
 	if (earthquakesResult.status === 'fulfilled') {
 		data.earthquakes = earthquakesResult.value;
 		data.loading.earthquakes = 'success';
@@ -129,6 +111,31 @@ export async function loadAllData(firmsApiKey: string) {
 		data.loading.population = 'error';
 		data.errors.population = String(populationResult.reason);
 	}
+
+	// Overpass queries run sequentially to avoid rate limiting (overpass-api.de
+	// enforces one concurrent request per IP; simultaneous requests get 429/timeout)
+	let overpassOk = false;
+	try {
+		data.healthFacilities = await fetchHealthFacilities();
+		overpassOk = true;
+	} catch (e) {
+		data.errors.overpass = `health: ${String(e)}`;
+	}
+	await new Promise((r) => setTimeout(r, 600));
+	try {
+		data.waterPoints = await fetchWaterPoints();
+		overpassOk = true;
+	} catch (e) {
+		data.errors.overpass = (data.errors.overpass ? data.errors.overpass + ' | ' : '') + `water: ${String(e)}`;
+	}
+	await new Promise((r) => setTimeout(r, 600));
+	try {
+		data.roads = await fetchRoads();
+		overpassOk = true;
+	} catch (e) {
+		data.errors.overpass = (data.errors.overpass ? data.errors.overpass + ' | ' : '') + `roads: ${String(e)}`;
+	}
+	data.loading.overpass = overpassOk ? 'success' : 'error';
 
 	data.lastUpdated = new Date();
 }

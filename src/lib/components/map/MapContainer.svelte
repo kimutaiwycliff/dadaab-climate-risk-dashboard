@@ -48,44 +48,49 @@
 	});
 
 	// ── Reactive: data source updates ────────────────────────────────────────
+	// IMPORTANT: data reads must come BEFORE the early-return guard so Svelte
+	// always registers the reactive dependency, even on the first run when
+	// layersAdded is still false. Without this, when data arrives later the
+	// effect never re-fires because the dependency was never tracked.
 	$effect(() => {
+		const fires = data.fires; // read BEFORE early return
 		const m = mapState.instance;
 		if (!m || !layersAdded || !m.isStyleLoaded()) return;
-		void data.fires; // track
 		const src = m.getSource('fire-hotspots') as GeoSource | undefined;
-		src?.setData(firesToGeoJSON(data.fires));
+		src?.setData(firesToGeoJSON(fires));
 	});
 
 	$effect(() => {
+		const earthquakes = data.earthquakes; // read BEFORE early return
 		const m = mapState.instance;
 		if (!m || !layersAdded || !m.isStyleLoaded()) return;
-		void data.earthquakes;
 		const src = m.getSource('earthquakes') as GeoSource | undefined;
-		src?.setData(earthquakesToGeoJSON(data.earthquakes));
+		src?.setData(earthquakesToGeoJSON(earthquakes));
 	});
 
 	$effect(() => {
+		const healthFacilities = data.healthFacilities; // read BEFORE early return
 		const m = mapState.instance;
 		if (!m || !layersAdded || !m.isStyleLoaded()) return;
-		void data.healthFacilities;
 		const src = m.getSource('health') as GeoSource | undefined;
-		src?.setData(osmToGeoJSONPoints(data.healthFacilities));
+		src?.setData(osmToGeoJSONPoints(healthFacilities));
 	});
 
 	$effect(() => {
+		const waterPoints = data.waterPoints; // read BEFORE early return
 		const m = mapState.instance;
 		if (!m || !layersAdded || !m.isStyleLoaded()) return;
-		void data.waterPoints;
 		const src = m.getSource('water') as GeoSource | undefined;
-		src?.setData(osmToGeoJSONPoints(data.waterPoints));
+		src?.setData(osmToGeoJSONPoints(waterPoints));
 	});
 
 	$effect(() => {
+		const fires = data.fires;   // read BEFORE early return
+		const drought = data.drought; // read BEFORE early return
 		const m = mapState.instance;
 		if (!m || !layersAdded || !m.isStyleLoaded()) return;
-		void data.drought; void data.fires;
 		const src = m.getSource('risk-grid') as GeoSource | undefined;
-		src?.setData(generateRiskGrid(data.fires.length, data.drought?.severity ?? 'severe'));
+		src?.setData(generateRiskGrid(fires.length, drought?.severity ?? 'severe'));
 	});
 
 	// ─────────────────────────────────────────────────────────────────────────
@@ -444,6 +449,60 @@
 			);
 		});
 		m.on('mouseleave', 'water-points', () => { setCursor(''); hideHover(); });
+
+		// ── Flood zone click + hover ─────────────────────────────────────────
+		m.on('click', 'flood-zones-fill', (e) => {
+			if (!e.features?.[0]) return;
+			hideHover();
+			const props = e.features[0].properties as Record<string, string | number>;
+			popup?.remove();
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '260px' })
+				.setLngLat(e.lngLat)
+				.setHTML(`
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#3b82f6;margin-bottom:6px">🌊 ${props.name || 'Flood-Prone Zone'}</div>
+						<div style="font-size:11px;color:#9ca3af">${props.description || 'Seasonal flood risk area in the Dadaab region'}</div>
+						${props.risk ? `<div style="font-size:11px;margin-top:4px">Risk: <code>${props.risk}</code></div>` : ''}
+					</div>
+				`)
+				.addTo(m);
+		});
+		m.on('mousemove', 'flood-zones-fill', (e) => {
+			setCursor('pointer');
+			const props = e.features?.[0]?.properties as Record<string, string> | undefined;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#3b82f6">🌊 Flood Zone</strong>${props?.name ? ` — ${props.name}` : ''}</div>`
+			);
+		});
+		m.on('mouseleave', 'flood-zones-fill', () => { setCursor(''); hideHover(); });
+
+		// ── Drought zone click + hover ───────────────────────────────────────
+		m.on('click', 'drought-zones-fill', (e) => {
+			if (!e.features?.[0]) return;
+			hideHover();
+			const props = e.features[0].properties as Record<string, string | number>;
+			popup?.remove();
+			popup = new MapLibre.Popup({ closeButton: true, maxWidth: '260px' })
+				.setLngLat(e.lngLat)
+				.setHTML(`
+					<div style="line-height:1.6">
+						<div style="font-weight:600;color:#f59e0b;margin-bottom:6px">🏜️ ${props.name || 'Drought Zone'}</div>
+						<div style="font-size:11px;color:#9ca3af">${props.description || 'Drought-affected area'}</div>
+						${props.severity ? `<div style="font-size:11px;margin-top:4px">Severity: <code>${props.severity}</code></div>` : ''}
+					</div>
+				`)
+				.addTo(m);
+		});
+		m.on('mousemove', 'drought-zones-fill', (e) => {
+			setCursor('pointer');
+			const props = e.features?.[0]?.properties as Record<string, string> | undefined;
+			showHover(
+				[e.lngLat.lng, e.lngLat.lat],
+				`<div style="font-size:11px"><strong style="color:#f59e0b">🏜️ Drought Zone</strong>${props?.name ? ` — ${props.name}` : ''}</div>`
+			);
+		});
+		m.on('mouseleave', 'drought-zones-fill', () => { setCursor(''); hideHover(); });
 
 		layersAdded = true;
 
