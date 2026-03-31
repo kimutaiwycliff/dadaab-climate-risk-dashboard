@@ -5,7 +5,7 @@
 	import { basemapState, BASEMAPS } from '$lib/stores/basemapStore.svelte';
 	import { openTable } from '$lib/stores/attributeTableStore.svelte';
 	import { zoomToLayer } from '$lib/utils/layerBounds';
-	import { Map as MapIcon, Layers, ZoomIn, Table2 } from 'lucide-svelte';
+	import { Map as MapIcon, Layers, ZoomIn, Table2, GripVertical } from 'lucide-svelte';
 
 	// Layers that have an attribute table
 	const TABLE_LAYERS = new Set(['fire-hotspots', 'camps', 'earthquakes', 'health', 'water', 'drought-zones', 'flood-zones']);
@@ -49,6 +49,66 @@
 			default: return undefined;
 		}
 	}
+
+	// ── Drag-to-reorder ────────────────────────────────────────────────────────
+	let dragFromIdx = $state<number | null>(null);
+	let dragOverIdx = $state<number | null>(null);
+
+	function onDragStart(e: DragEvent, idx: number) {
+		dragFromIdx = idx;
+		if (e.dataTransfer) {
+			e.dataTransfer.effectAllowed = 'move';
+			e.dataTransfer.setData('text/plain', String(idx));
+		}
+	}
+
+	function onDragOver(e: DragEvent, idx: number) {
+		e.preventDefault();
+		if (e.dataTransfer) e.dataTransfer.dropEffect = 'move';
+		dragOverIdx = idx;
+	}
+
+	function onDragLeave(idx: number) {
+		if (dragOverIdx === idx) dragOverIdx = null;
+	}
+
+	function onDrop(e: DragEvent, toIdx: number) {
+		e.preventDefault();
+		if (dragFromIdx === null || dragFromIdx === toIdx) {
+			dragFromIdx = null;
+			dragOverIdx = null;
+			return;
+		}
+		// Reorder the reactive layers array
+		const [moved] = layers.splice(dragFromIdx, 1);
+		layers.splice(toIdx, 0, moved);
+		dragFromIdx = null;
+		dragOverIdx = null;
+		syncLayerOrder();
+	}
+
+	function onDragEnd() {
+		dragFromIdx = null;
+		dragOverIdx = null;
+	}
+
+	// Re-apply z-order in MapLibre after reordering.
+	// Process layers[0] → layers[N-1], moving each group to the absolute top.
+	// The last group processed ends up on top of the map (layers[N-1] = top).
+	function syncLayerOrder() {
+		const m = mapState.instance;
+		if (!m || !m.isStyleLoaded()) return;
+		const style = m.getStyle();
+		if (!style?.layers) return;
+		for (const layer of layers) {
+			const sublayerIds = style.layers
+				.filter((l) => l.id === layer.id || l.id.startsWith(`${layer.id}-`))
+				.map((l) => l.id);
+			for (const id of sublayerIds) {
+				try { m.moveLayer(id); } catch { /* ignore */ }
+			}
+		}
+	}
 </script>
 
 <!-- Basemap switcher -->
@@ -78,16 +138,42 @@
 <div class="border-t border-border mb-3"></div>
 
 <!-- Layer toggles -->
-<div class="mb-1.5 flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
-	<Layers size={10} />
-	<span>Map Layers</span>
+<div class="mb-1.5 flex items-center justify-between">
+	<div class="flex items-center gap-1.5 text-xs font-semibold uppercase tracking-widest text-muted-foreground">
+		<Layers size={10} />
+		<span>Map Layers</span>
+	</div>
+	<span class="text-[9px] text-muted-foreground/50 italic">drag to reorder</span>
 </div>
+
+<!-- Hint: top of list = top of map (QGIS convention, reversed from store order) -->
+<div class="mb-1 flex items-center justify-between px-1 text-[9px] text-muted-foreground/40">
+	<span>↑ drawn on top</span>
+	<span>drawn below ↓</span>
+</div>
+
 <div class="space-y-0.5">
-	{#each layers as layer (layer.id)}
-		<div class="group rounded p-1.5 transition-colors hover:bg-muted/50">
-			<!-- Top row: checkbox + label + count + actions -->
-			<div class="flex items-center gap-2">
-				<!-- Checkbox -->
+	{#each [...layers].reverse() as layer, di (layer.id)}
+		{@const ri = layers.length - 1 - di}
+		{@const isDragTarget = dragOverIdx === ri && dragFromIdx !== null && dragFromIdx !== ri}
+		<div
+			class="group rounded p-1.5 transition-colors hover:bg-muted/50 cursor-default {dragFromIdx === ri ? 'opacity-40' : ''} {isDragTarget ? 'ring-1 ring-foreground/40' : ''}"
+			draggable="true"
+			ondragstart={(e) => onDragStart(e, ri)}
+			ondragover={(e) => onDragOver(e, ri)}
+			ondragleave={() => onDragLeave(ri)}
+			ondrop={(e) => onDrop(e, ri)}
+			ondragend={onDragEnd}
+			role="listitem"
+		>
+			<!-- Top row: drag handle + checkbox + label + count + actions -->
+			<div class="flex items-center gap-1.5">
+				<!-- Drag handle -->
+				<div class="shrink-0 cursor-grab text-muted-foreground/30 hover:text-muted-foreground/70 transition-colors active:cursor-grabbing">
+					<GripVertical size={13} />
+				</div>
+
+				<!-- Checkbox + label -->
 				<button
 					class="flex shrink-0 items-center gap-2 min-w-0 flex-1"
 					onclick={() => toggleLayer(layer.id)}
@@ -121,22 +207,20 @@
 					{/if}
 				</button>
 
-				<!-- Action buttons — always visible, not just on hover -->
+				<!-- Action buttons — always visible -->
 				<div class="flex shrink-0 items-center gap-0.5">
-					<!-- Zoom to layer -->
 					<button
 						onclick={() => handleZoom(layer.id)}
-						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+						class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-colors"
 						title="Zoom to {layer.label}"
 						aria-label="Zoom to {layer.label}"
 					>
 						<ZoomIn size={12} />
 					</button>
-					<!-- Attribute table -->
 					{#if TABLE_LAYERS.has(layer.id)}
 						<button
 							onclick={() => openTable(layer.id)}
-							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground opacity-0 transition-all group-hover:opacity-100 hover:bg-muted hover:text-foreground"
+							class="flex h-6 w-6 items-center justify-center rounded text-muted-foreground/50 hover:bg-muted hover:text-foreground transition-colors"
 							title="Open attribute table"
 							aria-label="Open attribute table for {layer.label}"
 						>
@@ -146,7 +230,7 @@
 				</div>
 			</div>
 			<!-- Description -->
-			<div class="mt-0.5 pl-6 text-[10px] leading-tight text-muted-foreground/60">{layer.description}</div>
+			<div class="mt-0.5 pl-7 text-[10px] leading-tight text-muted-foreground/60">{layer.description}</div>
 		</div>
 	{/each}
 </div>
